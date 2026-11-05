@@ -49,20 +49,12 @@
         {{ isPlaying ? '⏸' : '▶' }}
       </button>
 
-      <button class="control-btn" @click="increaseVolume" title="Aumentar volume">
-        🔊
-      </button>
-
-      <div class="volume-bar" @click="handleVolumeBarClick">
+      <div class="volume-bar" @click="handleVolumeBarClick" title="Ajustar volume">
         <div
           class="volume-level"
           :style="{ width: volumePercent + '%' }"
         ></div>
       </div>
-
-      <button class="control-btn" @click="decreaseVolume" title="Diminuir volume">
-        🔇
-      </button>
 
       <div class="live-indicator" v-if="isPlaying">
         <span class="live-dot"></span>
@@ -376,14 +368,29 @@ function handleFullscreenChange() {
 }
 
 function handleKeyDown(e: KeyboardEvent) {
+  const active = document.activeElement;
+  if (active && (active.tagName === 'INPUT' || active.tagName === 'TEXTAREA' || (active as HTMLElement).isContentEditable)) {
+    return;
+  }
   if (e.key === 'f' || e.key === 'F') {
-    const active = document.activeElement;
-    if (active && (active.tagName === 'INPUT' || active.tagName === 'TEXTAREA' || (active as HTMLElement).isContentEditable)) {
-      return;
-    }
     if (props.streamUrl) {
       e.preventDefault();
       toggleFullscreen();
+    }
+  } else if (e.key === 'ArrowUp') {
+    if (props.streamUrl) {
+      e.preventDefault();
+      increaseVolume();
+    }
+  } else if (e.key === 'ArrowDown') {
+    if (props.streamUrl) {
+      e.preventDefault();
+      decreaseVolume();
+    }
+  } else if (e.key === 'm' || e.key === 'M') {
+    if (props.streamUrl && videoElement.value) {
+      e.preventDefault();
+      videoElement.value.muted = !videoElement.value.muted;
     }
   }
 }

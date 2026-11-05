@@ -16,27 +16,29 @@ test('adjusts volume up and down', async ({ page }) => {
   // 4. Wait for player controls to appear
   await page.waitForSelector('.player-controls', { timeout: 15000 });
 
+  // 5. Verify volume up (🔊) and down (🔇) icon buttons are removed
+  const volButtons = page.locator('.player-controls button:has-text("🔊"), .player-controls button:has-text("🔇")');
+  await expect(volButtons).toHaveCount(0);
+
+  // 6. Verify volume bar is visible
+  const volumeBar = page.locator('.volume-bar');
   const volumeLevel = page.locator('.volume-level');
+  await expect(volumeBar).toBeVisible();
   await expect(volumeLevel).toBeVisible();
 
-  // Initial volume is 70%
-  await expect(volumeLevel).toHaveCSS('width', /.+px/);
-  const initialWidth = await volumeLevel.evaluate((el: HTMLElement) => el.style.width);
+  // 7. Adjust volume down by clicking on the left side of the volume bar (20%)
+  const box = await volumeBar.boundingBox();
+  expect(box).not.toBeNull();
+  if (box) {
+    await page.mouse.click(box.x + box.width * 0.2, box.y + box.height / 2);
+    await page.waitForTimeout(100);
+    const widthAfterDown = await volumeLevel.evaluate((el: HTMLElement) => parseFloat(el.style.width));
 
-  // Click volume down button (last control-btn in player-controls)
-  const volButtons = page.locator('.player-controls .control-btn');
-  const volUpBtn = volButtons.nth(1); // 🔊
-  const volDownBtn = volButtons.nth(2); // 🔇
+    // 8. Adjust volume up by clicking on the right side of the volume bar (85%)
+    await page.mouse.click(box.x + box.width * 0.85, box.y + box.height / 2);
+    await page.waitForTimeout(100);
+    const widthAfterUp = await volumeLevel.evaluate((el: HTMLElement) => parseFloat(el.style.width));
 
-  // Click volume down
-  await volDownBtn.click();
-  const widthAfterDown = await volumeLevel.evaluate((el: HTMLElement) => parseFloat(el.style.width));
-
-  // Click volume up twice
-  await volUpBtn.click();
-  await volUpBtn.click();
-  const widthAfterUp = await volumeLevel.evaluate((el: HTMLElement) => parseFloat(el.style.width));
-
-  expect(widthAfterUp).toBeGreaterThan(widthAfterDown);
+    expect(widthAfterUp).toBeGreaterThan(widthAfterDown);
+  }
 });
-
