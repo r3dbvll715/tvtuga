@@ -15,10 +15,11 @@ test.describe('Main Portuguese TV Channels Playback', () => {
       'RTP 2',
       'SIC',
       'TVI',
-      'SIC Notícias',
       'CNN Portugal',
       'RTP Notícias',
+      'Porto Canal',
       'ARTV',
+      'Canal 11',
       'RTP Açores',
       'RTP Madeira'
     ];

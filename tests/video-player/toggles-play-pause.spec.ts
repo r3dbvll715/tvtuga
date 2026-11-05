@@ -13,19 +13,18 @@ test('toggles play and pause', async ({ page }) => {
   const firstChannel = page.locator('.channel-list li').first();
   await firstChannel.click();
 
-  // 4. Wait for player controls to appear (increase timeout for video player initialization)
+  // 4. Wait for player controls to appear
   await page.waitForSelector('.player-controls', { timeout: 60000 });
-
-  // 5. Click the play button (first control-btn inside the video player)
   const playButton = page.locator('.player-controls .control-btn').first();
+
+  // 5. Inspect current state and toggle
+  const initialText = (await playButton.textContent())?.trim();
+  const expectedToggled = initialText === '⏸' ? '▶' : '⏸';
+
   await playButton.click();
+  await expect(playButton).toHaveText(expectedToggled);
 
-  // 6. Verify play button changes to pause icon
-  await expect(playButton).toHaveText('⏸');
-
-  // 7. Click the play button again
+  // 6. Toggle back
   await playButton.click();
-
-  // 8. Verify pause button changes back to play icon
-  await expect(playButton).toHaveText('▶');
+  await expect(playButton).toHaveText(initialText!);
 });

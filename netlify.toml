@@ -1,18 +1,17 @@
 [build]
   command = "npm run build"
   publish = "dist"
+  edge_functions = "netlify/edge-functions"
 
 [functions]
   directory = "netlify/functions"
   node_bundler = "esbuild"
 
-[[redirects]]
-  from = "/api/stream-proxy"
-  to = "/.netlify/functions/streamProxy"
-  status = 200
+[[edge_functions]]
+  path = "/api/stream-proxy"
+  function = "streamProxy"
 
 [[redirects]]
   from = "/*"
   to = "/index.html"
   status = 200
-

@@ -17,7 +17,7 @@
         v-if="!isPlaying && streamUrl && !loading && !error"
         class="big-play-overlay"
       >
-        <button class="big-play-btn" aria-label="Reproduzir canal">
+        <button class="big-play-btn" aria-label="Reproduzir canal" @click.stop="togglePlay">
           ▶
         </button>
       </div>
@@ -169,12 +169,25 @@ function loadStream(url: string) {
       }
     });
 
+    let networkRetryCount = 0;
     hls.on(Hls.Events.ERROR, (_event, data) => {
       if (data.fatal) {
         switch (data.type) {
           case Hls.ErrorTypes.NETWORK_ERROR:
-            console.warn('HLS.js fatal network error, recovering...', data.details);
-            hls.startLoad();
+            networkRetryCount++;
+            if (networkRetryCount <= 2 && data.details !== 'manifestLoadError') {
+              console.warn(`HLS.js network error, retrying (${networkRetryCount}/2)...`, data.details);
+              setTimeout(() => {
+                if (hlsInstance) hlsInstance.startLoad();
+              }, 1000);
+            } else {
+              console.error('HLS.js fatal unrecoverable network error:', data.details);
+              loading.value = false;
+              hls.destroy();
+              hlsInstance = null;
+              error.value = 'Emissão em direto temporariamente indisponível. Clique para tentar novamente.';
+              emit('error', error.value);
+            }
             break;
           case Hls.ErrorTypes.MEDIA_ERROR:
             console.warn('HLS.js fatal media error, recovering...', data.details);
@@ -182,7 +195,9 @@ function loadStream(url: string) {
             break;
           default:
             console.error('HLS.js unrecoverable fatal error:', data.details);
+            loading.value = false;
             hls.destroy();
+            hlsInstance = null;
             error.value = 'Não foi possível carregar esta emissão em direto';
             emit('error', error.value);
             break;
@@ -431,6 +446,14 @@ onMounted(() => {
       if (videoElement.value) {
         duration.value = videoElement.value.duration;
       }
+      loading.value = false;
+    });
+
+    videoElement.value.addEventListener('loadeddata', () => {
+      loading.value = false;
+    });
+
+    videoElement.value.addEventListener('canplay', () => {
       loading.value = false;
     });
 
