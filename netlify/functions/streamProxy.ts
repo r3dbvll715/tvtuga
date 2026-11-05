@@ -1,5 +1,8 @@
 import type { Config, Context } from '@netlify/functions';
+import https from 'https';
+import http from 'http';
 import zlib from 'zlib';
+import { URL } from 'url';
 
 export default async (req: Request, _context: Context): Promise<Response> => {
   if (req.method === 'OPTIONS') {
@@ -56,105 +59,143 @@ export default async (req: Request, _context: Context): Promise<Response> => {
     referer = origin ? `${origin}/` : `${parsedTarget.origin}/`;
   }
 
-  const reqHeaders: Record<string, string> = {
-    'User-Agent': userAgent,
-    'Accept': '*/*',
-  };
-  if (origin) reqHeaders['Origin'] = origin;
-  if (referer) reqHeaders['Referer'] = referer;
-  if (req.headers.get('range')) reqHeaders['Range'] = req.headers.get('range')!;
+  return new Promise<Response>((resolve) => {
+    fetchWithNode(targetUrl, 0, resolve);
+  });
 
-  try {
-    const remoteRes = await fetch(targetUrl, {
-      headers: reqHeaders,
-      redirect: 'follow',
-    });
+  function fetchWithNode(currentUrl: string, redirectCount: number, resolve: (res: Response) => void) {
+    if (redirectCount > 10) {
+      return resolve(new Response('Too many redirects', { status: 502 }));
+    }
 
-    const contentType = (remoteRes.headers.get('content-type') || '').toLowerCase();
-    const isM3U8 =
-      contentType.includes('mpegurl') ||
-      contentType.includes('application/x-mpegurl') ||
-      targetUrl.toLowerCase().includes('.m3u8');
+    let u: URL;
+    try {
+      u = new URL(currentUrl);
+    } catch {
+      return resolve(new Response('Invalid URL', { status: 400 }));
+    }
 
-    if (isM3U8) {
-      const buffer = Buffer.from(await remoteRes.arrayBuffer());
-      const encoding = (remoteRes.headers.get('content-encoding') || '').toLowerCase();
-      let body = '';
-      if (encoding === 'gzip' || encoding === 'deflate') {
-        try {
-          body = zlib.unzipSync(buffer).toString('utf8');
-        } catch {
-          body = buffer.toString('utf8');
-        }
-      } else {
-        body = buffer.toString('utf8');
+    const headers: Record<string, string> = {
+      'User-Agent': userAgent,
+      'Accept': '*/*',
+    };
+    if (origin) headers['Origin'] = origin;
+    if (referer) headers['Referer'] = referer;
+    const client = u.protocol === 'https:' ? https : http;
+
+    const request = client.get(currentUrl, { headers }, (remoteRes) => {
+      if (
+        remoteRes.statusCode &&
+        remoteRes.statusCode >= 300 &&
+        remoteRes.statusCode < 400 &&
+        remoteRes.headers.location
+      ) {
+        const nextUrl = new URL(remoteRes.headers.location, currentUrl).href;
+        return fetchWithNode(nextUrl, redirectCount + 1, resolve);
       }
 
-      const lines = body.split(/\r?\n/);
-      const rewrittenLines = lines.map((line) => {
-        const trimmed = line.trim();
-        if (!trimmed) return line;
+      if (remoteRes.statusCode === 204 || remoteRes.statusCode === 304) {
+        return resolve(new Response(null, {
+          status: remoteRes.statusCode,
+          headers: { 'Access-Control-Allow-Origin': '*' }
+        }));
+      }
 
-        if (trimmed.startsWith('#')) {
-          return line.replace(/URI="([^"]+)"/g, (_, uri) => {
+      const encoding = (remoteRes.headers['content-encoding'] || '').toLowerCase();
+      const contentType = (remoteRes.headers['content-type'] || '').toLowerCase();
+      const isM3U8 =
+        contentType.includes('mpegurl') ||
+        contentType.includes('application/x-mpegurl') ||
+        currentUrl.toLowerCase().includes('.m3u8');
+
+      const chunks: Buffer[] = [];
+      remoteRes.on('data', (chunk: Buffer) => chunks.push(chunk));
+      remoteRes.on('end', () => {
+        const fullBuffer = Buffer.concat(chunks);
+
+        if (isM3U8) {
+          let body = '';
+          if (encoding === 'gzip' || encoding === 'deflate') {
             try {
-              const resolved = new URL(uri, targetUrl).href;
+              body = zlib.unzipSync(fullBuffer).toString('utf8');
+            } catch {
+              body = fullBuffer.toString('utf8');
+            }
+          } else {
+            body = fullBuffer.toString('utf8');
+          }
+
+          const lines = body.split(/\r?\n/);
+          const rewrittenLines = lines.map((line) => {
+            const trimmed = line.trim();
+            if (!trimmed) return line;
+
+            if (trimmed.startsWith('#')) {
+              return line.replace(/URI="([^"]+)"/g, (_, uri) => {
+                try {
+                  const resolved = new URL(uri, currentUrl).href;
+                  let proxyUri = `/api/stream-proxy?url=${encodeURIComponent(resolved)}`;
+                  if (origin) proxyUri += `&origin=${encodeURIComponent(origin)}`;
+                  if (referer) proxyUri += `&referer=${encodeURIComponent(referer)}`;
+                  if (userAgent) proxyUri += `&userAgent=${encodeURIComponent(userAgent)}`;
+                  return `URI="${proxyUri}"`;
+                } catch {
+                  return `URI="${uri}"`;
+                }
+              });
+            }
+
+            try {
+              const resolved = new URL(trimmed, currentUrl).href;
               let proxyUri = `/api/stream-proxy?url=${encodeURIComponent(resolved)}`;
               if (origin) proxyUri += `&origin=${encodeURIComponent(origin)}`;
               if (referer) proxyUri += `&referer=${encodeURIComponent(referer)}`;
               if (userAgent) proxyUri += `&userAgent=${encodeURIComponent(userAgent)}`;
-              return `URI="${proxyUri}"`;
+              return proxyUri;
             } catch {
-              return `URI="${uri}"`;
+              return line;
             }
           });
+
+          const rewritten = rewrittenLines.join('\n');
+          return resolve(new Response(rewritten, {
+            status: remoteRes.statusCode || 200,
+            headers: {
+              'Content-Type': 'application/vnd.apple.mpegurl',
+              'Access-Control-Allow-Origin': '*',
+              'Cache-Control': 'no-cache, no-store, must-revalidate',
+            },
+          }));
         }
 
-        try {
-          const resolved = new URL(trimmed, targetUrl).href;
-          let proxyUri = `/api/stream-proxy?url=${encodeURIComponent(resolved)}`;
-          if (origin) proxyUri += `&origin=${encodeURIComponent(origin)}`;
-          if (referer) proxyUri += `&referer=${encodeURIComponent(referer)}`;
-          if (userAgent) proxyUri += `&userAgent=${encodeURIComponent(userAgent)}`;
-          return proxyUri;
-        } catch {
-          return line;
-        }
-      });
-
-      const rewritten = rewrittenLines.join('\n');
-      return new Response(rewritten, {
-        status: remoteRes.status,
-        headers: {
-          'Content-Type': 'application/vnd.apple.mpegurl',
+        // Binary media segments (.ts, .m4s)
+        const resHeaders: Record<string, string> = {
           'Access-Control-Allow-Origin': '*',
-          'Cache-Control': 'no-cache, no-store, must-revalidate',
-        },
+          'Content-Type': (remoteRes.headers['content-type'] as string) || 'video/MP2T',
+        };
+        if (remoteRes.headers['content-length']) {
+          resHeaders['Content-Length'] = remoteRes.headers['content-length'] as string;
+        }
+        if (remoteRes.headers['content-range']) {
+          resHeaders['Content-Range'] = remoteRes.headers['content-range'] as string;
+        }
+        if (remoteRes.headers['accept-ranges']) {
+          resHeaders['Accept-Ranges'] = remoteRes.headers['accept-ranges'] as string;
+        }
+
+        return resolve(new Response(fullBuffer, {
+          status: remoteRes.statusCode || 200,
+          headers: resHeaders,
+        }));
       });
-    }
 
-    // Binary media segments (.ts, .m4s)
-    const resHeaders = new Headers();
-    resHeaders.set('Access-Control-Allow-Origin', '*');
-    resHeaders.set('Content-Type', remoteRes.headers.get('content-type') || 'video/MP2T');
-    if (remoteRes.headers.get('content-length')) {
-      resHeaders.set('Content-Length', remoteRes.headers.get('content-length')!);
-    }
-    if (remoteRes.headers.get('content-range')) {
-      resHeaders.set('Content-Range', remoteRes.headers.get('content-range')!);
-    }
-    if (remoteRes.headers.get('accept-ranges')) {
-      resHeaders.set('Accept-Ranges', remoteRes.headers.get('accept-ranges')!);
-    }
-
-    return new Response(remoteRes.body, {
-      status: remoteRes.status,
-      headers: resHeaders,
+      remoteRes.on('error', (err) => {
+        resolve(new Response(`Remote error: ${err.message}`, { status: 502 }));
+      });
     });
-  } catch (err: any) {
-    return new Response(`Proxy error: ${err?.message || err}`, {
-      status: 502,
-      headers: { 'Access-Control-Allow-Origin': '*' }
+
+    request.on('error', (err) => {
+      resolve(new Response(`Request error: ${err.message}`, { status: 502 }));
     });
   }
 };
