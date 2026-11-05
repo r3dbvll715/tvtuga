@@ -41,3 +41,6 @@ screenshot.mjs
 .claude/
 skills-lock.json
 
+# Netlify local files
+.netlify/
+

@@ -1,8 +1,8 @@
 import { test, expect } from '@playwright/test';
 
 test.describe('Main Portuguese TV Channels Playback', () => {
-  test('streams and plays RTP 1, RTP 2, SIC, and TVI', async ({ page }) => {
-    test.setTimeout(90000);
+  test('streams and plays all verified Portuguese generalist and national channels', async ({ page }) => {
+    test.setTimeout(120000);
 
     await page.goto('http://localhost:3000');
     await page.waitForLoadState('domcontentloaded');
@@ -10,7 +10,18 @@ test.describe('Main Portuguese TV Channels Playback', () => {
     // Wait for channels to load
     await page.waitForSelector('.channel-list li', { timeout: 15000 });
 
-    const channelsToTest = ['RTP 1', 'RTP 2', 'SIC', 'TVI', 'SIC Notícias', 'CNN Portugal', 'RTP Notícias'];
+    const channelsToTest = [
+      'RTP 1',
+      'RTP 2',
+      'SIC',
+      'TVI',
+      'SIC Notícias',
+      'CNN Portugal',
+      'RTP Notícias',
+      'ARTV',
+      'RTP Açores',
+      'RTP Madeira'
+    ];
 
     for (const channelName of channelsToTest) {
       // Find the channel list item containing the channel name

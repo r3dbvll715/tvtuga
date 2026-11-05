@@ -82,8 +82,10 @@ export function createStreamProxyMiddleware(): Connect.NextHandleFunction {
       }
 
       const headers: Record<string, string> = {
+        'Host': u.host,
         'User-Agent': userAgent,
-        'Accept': '*/*'
+        'Accept': '*/*',
+        'Accept-Language': 'pt-PT,pt;q=0.9,en;q=0.8'
       };
       if (origin) headers['Origin'] = origin;
       if (referer) headers['Referer'] = referer;
@@ -104,10 +106,12 @@ export function createStreamProxyMiddleware(): Connect.NextHandleFunction {
 
         const encoding = (remoteRes.headers['content-encoding'] || '').toLowerCase();
         const contentType = (remoteRes.headers['content-type'] || '').toLowerCase();
+        const isSuccess = (remoteRes.statusCode || 200) < 400;
         const isM3U8 =
-          contentType.includes('mpegurl') ||
-          contentType.includes('application/x-mpegurl') ||
-          currentUrl.toLowerCase().includes('.m3u8');
+          isSuccess &&
+          (contentType.includes('mpegurl') ||
+           contentType.includes('application/x-mpegurl') ||
+           currentUrl.toLowerCase().includes('.m3u8'));
 
         if (isM3U8) {
           const chunks: Buffer[] = [];
