@@ -1,0 +1,42 @@
+# Dependencies
+node_modules
+dist
+dist-ssr
+*.local
+
+# Logs
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+pnpm-debug.log*
+
+# Editor & OS files
+.vscode/*
+!.vscode/extensions.json
+.idea
+.DS_Store
+*.suo
+*.ntvs*
+*.njsproj
+*.sln
+*.sw?
+
+# Environment
+.env
+.env.*
+!.env.example
+
+# Playwright test outputs
+test-results/
+playwright-report/
+blob-report/
+playwright/.cache/
+test-results.json
+
+# Scratch files
+screenshot.mjs
+
+# Agent local artifacts
+.agents/
+.claude/
+skills-lock.json
