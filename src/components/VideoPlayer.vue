@@ -1,6 +1,6 @@
 <template>
-  <div class="video-player" :class="{ 'error-state': !!error }">
-    <div class="video-wrapper" @click="handleWrapperClick">
+  <div ref="playerContainer" class="video-player" :class="{ 'error-state': !!error, 'is-fullscreen': isFullscreen }">
+    <div class="video-wrapper" @click="handleWrapperClick" @dblclick.prevent="toggleFullscreen">
       <video
         ref="videoElement"
         class="video-element"
@@ -72,6 +72,20 @@
       <div class="time-display">
         {{ currentTimeFormatted }} / {{ durationFormatted }}
       </div>
+
+      <button
+        class="control-btn fullscreen-btn"
+        @click="toggleFullscreen"
+        :title="isFullscreen ? 'Sair de ecrã inteiro (f)' : 'Ecrã inteiro (f)'"
+        aria-label="Ecrã inteiro"
+      >
+        <svg v-if="!isFullscreen" viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+          <path d="M8 3H5a2 2 0 0 0-2 2v3m18 0V5a2 2 0 0 0-2-2h-3m0 18h3a2 2 0 0 0 2-2v-3M3 16v3a2 2 0 0 0 2 2h3" />
+        </svg>
+        <svg v-else viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+          <path d="M8 3v3a2 2 0 0 1-2 2H3m18 0h-3a2 2 0 0 1-2-2V3m0 18v-3a2 2 0 0 1 2-2h3M3 16h3a2 2 0 0 1 2 2v3" />
+        </svg>
+      </button>
     </div>
 
     <div v-if="error" class="error-overlay">
@@ -99,11 +113,13 @@ const props = defineProps({
 
 const emit = defineEmits(['update:modelValue', 'play', 'pause', 'error']);
 
+const playerContainer = ref<HTMLElement | null>(null);
 const videoElement = ref<HTMLVideoElement | null>(null);
 let hlsInstance: Hls | null = null;
 
 const isPlaying = ref(false);
 const isMutedAutoplay = ref(false);
+const isFullscreen = ref(false);
 const volume = ref(0.7);
 const currentTime = ref(0);
 const duration = ref(0);
@@ -316,7 +332,69 @@ watch(
   }
 );
 
+function toggleFullscreen() {
+  const target = playerContainer.value || videoElement.value;
+  if (!target) return;
+
+  const doc = document as any;
+  const isCurrentlyFullscreen = !!(doc.fullscreenElement || doc.webkitFullscreenElement || doc.mozFullScreenElement || doc.msFullscreenElement);
+
+  if (!isCurrentlyFullscreen) {
+    if (target.requestFullscreen) {
+      target.requestFullscreen().catch(err => {
+        if (videoElement.value && (videoElement.value as any).webkitEnterFullscreen) {
+          (videoElement.value as any).webkitEnterFullscreen();
+        } else {
+          console.warn('Error attempting fullscreen:', err);
+        }
+      });
+    } else if ((target as any).webkitRequestFullscreen) {
+      (target as any).webkitRequestFullscreen();
+    } else if ((target as any).mozRequestFullScreen) {
+      (target as any).mozRequestFullScreen();
+    } else if ((target as any).msRequestFullscreen) {
+      (target as any).msRequestFullscreen();
+    } else if (videoElement.value && (videoElement.value as any).webkitEnterFullscreen) {
+      (videoElement.value as any).webkitEnterFullscreen();
+    }
+  } else {
+    if (document.exitFullscreen) {
+      document.exitFullscreen().catch(err => console.warn('Exit fullscreen error:', err));
+    } else if (doc.webkitExitFullscreen) {
+      doc.webkitExitFullscreen();
+    } else if (doc.mozCancelFullScreen) {
+      doc.mozCancelFullScreen();
+    } else if (doc.msExitFullscreen) {
+      doc.msExitFullscreen();
+    }
+  }
+}
+
+function handleFullscreenChange() {
+  const doc = document as any;
+  isFullscreen.value = !!(doc.fullscreenElement || doc.webkitFullscreenElement || doc.mozFullScreenElement || doc.msFullscreenElement);
+}
+
+function handleKeyDown(e: KeyboardEvent) {
+  if (e.key === 'f' || e.key === 'F') {
+    const active = document.activeElement;
+    if (active && (active.tagName === 'INPUT' || active.tagName === 'TEXTAREA' || (active as HTMLElement).isContentEditable)) {
+      return;
+    }
+    if (props.streamUrl) {
+      e.preventDefault();
+      toggleFullscreen();
+    }
+  }
+}
+
 onMounted(() => {
+  document.addEventListener('fullscreenchange', handleFullscreenChange);
+  document.addEventListener('webkitfullscreenchange', handleFullscreenChange);
+  document.addEventListener('mozfullscreenchange', handleFullscreenChange);
+  document.addEventListener('MSFullscreenChange', handleFullscreenChange);
+  window.addEventListener('keydown', handleKeyDown);
+
   if (videoElement.value) {
     videoElement.value.volume = volume.value;
 
@@ -374,6 +452,12 @@ onMounted(() => {
 });
 
 onBeforeUnmount(() => {
+  document.removeEventListener('fullscreenchange', handleFullscreenChange);
+  document.removeEventListener('webkitfullscreenchange', handleFullscreenChange);
+  document.removeEventListener('mozfullscreenchange', handleFullscreenChange);
+  document.removeEventListener('MSFullscreenChange', handleFullscreenChange);
+  window.removeEventListener('keydown', handleKeyDown);
+
   if (hlsInstance) {
     hlsInstance.destroy();
     hlsInstance = null;
@@ -384,7 +468,9 @@ defineExpose({
   play,
   pause,
   togglePlay,
-  retryLoad
+  retryLoad,
+  toggleFullscreen,
+  isFullscreen
 });
 </script>
 
@@ -660,5 +746,46 @@ defineExpose({
   height: 100%;
   color: var(--text-dim);
   font-style: italic;
+}
+
+.fullscreen-btn {
+  margin-left: 0.5rem;
+  flex-shrink: 0;
+}
+
+.fullscreen-btn svg {
+  display: block;
+}
+
+/* Fullscreen player styles */
+:fullscreen.video-player,
+:-webkit-full-screen.video-player,
+.video-player.is-fullscreen {
+  border-radius: 0;
+  border: none;
+  width: 100vw;
+  height: 100vh;
+  max-width: 100vw;
+  max-height: 100vh;
+  box-shadow: none;
+  background: #000;
+}
+
+:fullscreen.video-player .video-wrapper,
+:-webkit-full-screen.video-player .video-wrapper,
+.video-player.is-fullscreen .video-wrapper {
+  height: 100%;
+}
+
+:fullscreen.video-player .player-controls,
+:-webkit-full-screen.video-player .player-controls,
+.video-player.is-fullscreen .player-controls {
+  position: absolute;
+  bottom: 0;
+  left: 0;
+  right: 0;
+  z-index: 10;
+  background: linear-gradient(to top, rgba(10, 12, 16, 0.95), rgba(10, 12, 16, 0.6) 60%, transparent);
+  border-top: 1px solid rgba(255, 255, 255, 0.08);
 }
 </style>
